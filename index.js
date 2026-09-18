@@ -3,13 +3,13 @@ const { Client, Events, GatewayIntentBits } = require('discord.js');
 const { GoogleGenAI } = require('@google/genai');
 const express = require('express');
 
-// Khởi tạo Web Server Keep-Alive
+// Web Server Keep-Alive
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.get('/', (req, res) => res.send('Bot Gemini đang hoạt động!'));
 app.listen(PORT, () => console.log(`✅ Server HTTP listening on port ${PORT}`));
 
-// SDK Gemini & Discord
+// Khởi tạo Gemini & Discord SDK
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const client = new Client({
   intents: [
@@ -26,7 +26,7 @@ client.once(Events.ClientReady, (readyClient) => {
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
-  // 1. Kiểm tra nếu người dùng REPLY tin nhắn của bot
+  // Kiểm tra nếu người dùng REPLY tin nhắn của bot
   let isReplyToBot = false;
   if (message.reference) {
     try {
@@ -39,13 +39,13 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // 2. Kiểm tra MENTION (@) bot hoặc tiền tố !gemini
+  // Kiểm tra MENTION (@) bot hoặc tiền tố !gemini
   const isMentioned = message.mentions.has(client.user.id);
   const startsWithPrefix = message.content.startsWith('!gemini');
 
   if (!isReplyToBot && !isMentioned && !startsWithPrefix) return;
 
-  // Làm sạch câu lệnh
+  // Làm sạch prompt
   let prompt = message.content
     .replace('!gemini', '')
     .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
@@ -58,9 +58,9 @@ client.on(Events.MessageCreate, async (message) => {
   try {
     await message.channel.sendTyping();
 
-    // Sử dụng gemini-2.5-flash chuẩn
+    // Cập nhật model thành gemini-3.6-flash theo đúng yêu cầu API
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
     });
 
