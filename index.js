@@ -3,7 +3,7 @@ const { Client, Events, GatewayIntentBits } = require('discord.js');
 const Groq = require('groq-sdk');
 const express = require('express');
 
-// Web Server Keep-Alive
+// Web Server Keep-Alive trên Render
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.get('/', (req, res) => res.send('Bot Groq AI đang hoạt động!'));
@@ -60,10 +60,10 @@ client.on(Events.MessageCreate, async (message) => {
   try {
     await message.channel.sendTyping();
 
-    // Dùng model llama-3.1-8b-instant siêu nhanh và miễn phí
+    // Dùng Model ID chuẩn của Groq: llama3-8b-8192
     const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'llama-3.1-8b-instant',
+      model: 'llama3-8b-8192',
     });
 
     const replyText = response.choices[0]?.message?.content || 'Không có phản hồi.';
