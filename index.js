@@ -1,17 +1,14 @@
 require('dotenv').config();
 const { Client, Events, GatewayIntentBits } = require('discord.js');
-const OpenAI = require('openai');
+const Groq = require('groq-sdk');
 const express = require('express');
 
-// Server Keep-Alive trên Render
 const app = express();
 const PORT = process.env.PORT || 10000;
-app.get('/', (req, res) => res.send('Bot ChatGPT đang chạy!'));
+app.get('/', (req, res) => res.send('Bot AI đang hoạt động!'));
 app.listen(PORT, () => console.log(`✅ Server HTTP listening on port ${PORT}`));
 
-// Khởi tạo SDK OpenAI
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -21,13 +18,12 @@ const client = new Client({
 });
 
 client.once(Events.ClientReady, (readyClient) => {
-  console.log(`🤖 Bot ChatGPT đã đăng nhập thành công: ${readyClient.user.tag}`);
+  console.log(`🤖 Bot đã đăng nhập: ${readyClient.user.tag}`);
 });
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
-  // Kiểm tra reply bot
   let isReplyToBot = false;
   if (message.reference) {
     try {
@@ -36,11 +32,10 @@ client.on(Events.MessageCreate, async (message) => {
         isReplyToBot = true;
       }
     } catch (err) {
-      console.error('Không lấy được tin nhắn reply:', err);
+      console.error(err);
     }
   }
 
-  // Kiểm tra tag @bot hoặc prefix
   const isMentioned = message.mentions.has(client.user.id);
   const startsWithPrefix = message.content.startsWith('!gpt') || message.content.startsWith('!gemini');
 
@@ -52,21 +47,16 @@ client.on(Events.MessageCreate, async (message) => {
     .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
     .trim();
 
-  if (!prompt) {
-    return message.reply('❓ Bạn chưa nhập nội dung câu hỏi!');
-  }
+  if (!prompt) return message.reply('❓ Bạn chưa nhập nội dung câu hỏi!');
 
   try {
     await message.channel.sendTyping();
-
-    // Dùng gpt-4o-mini vừa rẻ vừa phản hồi siêu nhanh
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const response = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.3-70b-versatile',
     });
 
-    const replyText = response.choices[0].message.content;
-
+    const replyText = response.choices[0]?.message?.content || 'Không có phản hồi.';
     if (replyText.length > 2000) {
       const chunks = replyText.match(/[\s\S]{1,1900}/g) || [];
       for (const chunk of chunks) await message.reply(chunk);
@@ -74,8 +64,8 @@ client.on(Events.MessageCreate, async (message) => {
       await message.reply(replyText);
     }
   } catch (error) {
-    console.error('OpenAI Error:', error);
-    await message.reply('❌ Có lỗi xảy ra khi gọi ChatGPT API.');
+    console.error('Groq Error:', error);
+    await message.reply('❌ Có lỗi xảy ra khi gọi AI API.');
   }
 });
 
