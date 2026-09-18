@@ -3,13 +3,13 @@ const { Client, Events, GatewayIntentBits } = require('discord.js');
 const OpenAI = require('openai');
 const express = require('express');
 
-// Keep-Alive Web Server cho Render
+// Server Keep-Alive trên Render
 const app = express();
 const PORT = process.env.PORT || 10000;
-app.get('/', (req, res) => res.send('Bot ChatGPT đang hoạt động!'));
+app.get('/', (req, res) => res.send('Bot ChatGPT đang chạy!'));
 app.listen(PORT, () => console.log(`✅ Server HTTP listening on port ${PORT}`));
 
-// Khởi tạo OpenAI SDK (dùng model gpt-4o-mini siêu nhanh & rẻ)
+// Khởi tạo SDK OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const client = new Client({
@@ -21,13 +21,13 @@ const client = new Client({
 });
 
 client.once(Events.ClientReady, (readyClient) => {
-  console.log(`🤖 Bot ChatGPT đã đăng nhập: ${readyClient.user.tag}`);
+  console.log(`🤖 Bot ChatGPT đã đăng nhập thành công: ${readyClient.user.tag}`);
 });
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
-  // 1. Kiểm tra nếu REPLY tin nhắn của bot
+  // Kiểm tra reply bot
   let isReplyToBot = false;
   if (message.reference) {
     try {
@@ -40,13 +40,12 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // 2. Kiểm tra MENTION (@) bot hoặc lệnh !gpt / !gemini
+  // Kiểm tra tag @bot hoặc prefix
   const isMentioned = message.mentions.has(client.user.id);
   const startsWithPrefix = message.content.startsWith('!gpt') || message.content.startsWith('!gemini');
 
   if (!isReplyToBot && !isMentioned && !startsWithPrefix) return;
 
-  // Làm sạch prompt
   let prompt = message.content
     .replace('!gpt', '')
     .replace('!gemini', '')
@@ -60,7 +59,7 @@ client.on(Events.MessageCreate, async (message) => {
   try {
     await message.channel.sendTyping();
 
-    // Gọi API ChatGPT
+    // Dùng gpt-4o-mini vừa rẻ vừa phản hồi siêu nhanh
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
