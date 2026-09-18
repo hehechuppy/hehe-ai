@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, Events, GatewayIntentBits } = require('discord.js');
 const { GoogleGenAI } = require('@google/genai');
 const express = require('express');
 
@@ -19,20 +19,22 @@ const client = new Client({
   ],
 });
 
-client.once('ready', () => {
-  console.log(`🤖 Bot đã đăng nhập: ${client.user.tag}`);
+// Sử dụng Events.ClientReady thay cho 'ready' để sửa warning
+client.once(Events.ClientReady, (readyClient) => {
+  console.log(`🤖 Bot đã đăng nhập: ${readyClient.user.tag}`);
 });
 
-client.on('messageCreate', async (message) => {
+client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.content.startsWith('!gemini')) return;
 
   const prompt = message.content.slice(7).trim();
-  if (!prompt) return message.reply('❓ Vui lòng nhập câu hỏi sau `.gemini`');
+  if (!prompt) return message.reply('❓ Vui lòng nhập câu hỏi sau `!gemini`');
 
   try {
     await message.channel.sendTyping();
+    // Đã đổi model thành gemini-3.6-flash
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
     });
 
