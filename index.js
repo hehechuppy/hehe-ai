@@ -24,10 +24,9 @@ client.once(Events.ClientReady, (readyClient) => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  // Bỏ qua nếu tin nhắn từ bot
   if (message.author.bot) return;
 
-  // 1. Kiểm tra xem người dùng có REPLY tin nhắn của bot không
+  // 1. Kiểm tra nếu người dùng REPLY tin nhắn của bot
   let isReplyToBot = false;
   if (message.reference) {
     try {
@@ -40,14 +39,13 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // 2. Kiểm tra xem người dùng có MENTION (@) bot hoặc dùng tiền tố !gemini không
+  // 2. Kiểm tra MENTION (@) bot hoặc tiền tố !gemini
   const isMentioned = message.mentions.has(client.user.id);
   const startsWithPrefix = message.content.startsWith('!gemini');
 
-  // Nếu không rơi vào 3 trường hợp trên thì bỏ qua
   if (!isReplyToBot && !isMentioned && !startsWithPrefix) return;
 
-  // Làm sạch prompt: loại bỏ tiền tố !gemini hoặc đoạn @bot
+  // Làm sạch câu lệnh
   let prompt = message.content
     .replace('!gemini', '')
     .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
@@ -60,8 +58,9 @@ client.on(Events.MessageCreate, async (message) => {
   try {
     await message.channel.sendTyping();
 
+    // Sử dụng gemini-2.5-flash chuẩn
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     });
 
