@@ -1,3 +1,15 @@
-git add .
-git commit -m "Fix missing dotenv module"
-git push origin main
+{
+  "name": "hehe-ai",
+  "version": "1.0.0",
+  "description": "Bot Gemini Discord",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@google/genai": "^0.1.1",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
