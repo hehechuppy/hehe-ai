@@ -1,5 +1,5 @@
-const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { Client, GatewayIntentBits } = require('discord.js');
+const { Groq } = require('groq-sdk');
 const express = require('express');
 require('dotenv').config();
 
@@ -24,8 +24,10 @@ app.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+// Initialize Groq
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
 
 // Lưu conversation history cho mỗi user
 const conversationHistory = new Map();
@@ -35,8 +37,26 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 client.once('clientReady', () => {
   console.log(`✅ Bot logged in as ${client.user.tag}`);
+  console.log(`🚀 Using Groq AI`);
   client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
 });
+
+// Function để gọi Groq
+async function callGroq(messages) {
+  try {
+    const response = await groq.chat.completions.create({
+      messages: messages,
+      model: 'mixtral-8x7b-32768', // Hoặc: llama2-70b-4096
+      temperature: 0.7,
+      max_tokens: 1024,
+    });
+
+    return response.choices[0].message.content;
+  } catch (error) {
+    console.error('❌ Groq error:', error.message);
+    throw error;
+  }
+}
 
 client.on('messageCreate', async (message) => {
   // Bỏ qua bot messages và webhook messages
@@ -51,7 +71,7 @@ client.on('messageCreate', async (message) => {
     // Hiển thị "đang gõ"
     await message.channel.sendTyping();
     
-    // Chờ 500ms để tránh rate limit
+    // Chờ 500ms
     await wait(500);
 
     // Lấy user ID để track conversation
@@ -70,30 +90,28 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    // Thêm vào conversation history
+    // Lấy conversation history
     const history = conversationHistory.get(userId);
+
+    // Thêm tin nhắn mới vào history
     history.push({
       role: 'user',
-      parts: [{ text: userMessage }],
+      content: userMessage,
     });
 
-    // Giữ lại 10 tin nhắn gần nhất (để tránh quá dài)
-    if (history.length > 10) {
+    // Giữ lại 20 tin nhắn gần nhất (để tránh quá dài)
+    if (history.length > 20) {
       history.shift();
     }
 
-    // Gọi Gemini AI
-    const chat = model.startChat({
-      history: history.slice(0, -1), // Loại bỏ tin nhắn vừa thêm để tránh duplicate
-    });
-
-    const result = await chat.sendMessage(userMessage);
-    const response = result.response.text();
+    // Gọi Groq
+    console.log(`🔄 Processing: "${userMessage}"`);
+    const response = await callGroq(history);
 
     // Thêm response vào history
     history.push({
-      role: 'model',
-      parts: [{ text: response }],
+      role: 'assistant',
+      content: response,
     });
 
     // Tách response nếu quá dài (Discord limit 2000 ký tự)
@@ -106,19 +124,19 @@ client.on('messageCreate', async (message) => {
     } else {
       await message.reply(response);
     }
-  } catch (error) {
-    console.error('❌ Lỗi:', error.message);
 
-    if (error.message.includes('GEMINI_API_KEY')) {
-      await message.reply('❌ Lỗi: API key không được set. Kiểm tra `.env` file.');
-    } else if (error.message.includes('quota')) {
-      await message.reply('❌ Quota Gemini API đã hết. Vui lòng thử lại sau.');
-    } else if (error.message.includes('no longer available')) {
-      await message.reply('❌ Model không khả dụng. Admin đang fix...');
+    console.log(`✅ Reply sent to ${message.author.username}`);
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+
+    if (error.message.includes('401') || error.message.includes('API key')) {
+      await message.reply('❌ Lỗi: API key không hợp lệ. Kiểm tra `.env` file.');
     } else if (error.message.includes('429')) {
-      await message.reply('⏳ Rate limit! Vui lòng chờ một chút rồi thử lại.');
+      await message.reply('⏳ Rate limit! Groq đang xử lý quá nhiều. Thử lại sau.');
+    } else if (error.message.includes('timeout')) {
+      await message.reply('⏳ Groq đang xử lý quá lâu. Thử lại sau.');
     } else {
-      await message.reply('❌ Có lỗi xảy ra. Vui lòng thử lại sau.');
+      await message.reply('❌ Có lỗi xảy ra. Thử lại sau.');
     }
   }
 });
@@ -129,7 +147,7 @@ client.on('messageCreate', async (message) => {
     const helpEmbed = {
       color: 0x0099ff,
       title: '🤖 Trợ giúp Bot AI',
-      description: 'Cách sử dụng bot chatbot AI',
+      description: 'Cách sử dụng bot chatbot AI với Groq',
       fields: [
         {
           name: '💬 Chat với bot',
@@ -137,26 +155,25 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: 'Gemini 3.6 Flash + Discord.js',
+          value: 'Groq + Mixtral 8x7B',
+        },
+        {
+          name: '⚡ Tính năng',
+          value: '✅ Miễn phí\n✅ Unlimited\n✅ Siêu nhanh\n✅ Nhớ conversation',
         },
       ],
-      footer: { text: 'Bot sẽ nhớ conversation của bạn trong phiên đó' },
+      footer: { text: 'Groq: Free, Fast, và Forever!' },
     };
 
     await message.reply({ embeds: [helpEmbed] });
   }
 });
 
-// Xóa conversation history khi user không hoạt động lâu (optional)
+// Xóa conversation history định kỳ
 setInterval(() => {
-  const now = Date.now();
-  const MAX_HISTORY_AGE = 24 * 60 * 60 * 1000; // 24 giờ
-
-  for (const [userId, history] of conversationHistory.entries()) {
-    // Đơn giản: xóa nếu có quá 50 user
-    if (conversationHistory.size > 50) {
-      conversationHistory.delete(userId);
-    }
+  if (conversationHistory.size > 50) {
+    const firstKey = conversationHistory.keys().next().value;
+    conversationHistory.delete(firstKey);
   }
 }, 60 * 60 * 1000); // Check mỗi giờ
 
