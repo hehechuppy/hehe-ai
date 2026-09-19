@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const express = require('express');
 require('dotenv').config();
 
 const client = new Client({
@@ -11,13 +12,25 @@ const client = new Client({
   ],
 });
 
+// Express server for Render health check
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.status(200).send('Bot is running ✅');
+});
+
+app.listen(PORT, () => {
+  console.log(`HTTP server listening on port ${PORT}`);
+});
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
 // Lưu conversation history cho mỗi user
 const conversationHistory = new Map();
 
-client.once('ready', () => {
+client.once('clientReady', () => {
   console.log(`✅ Bot logged in as ${client.user.tag}`);
   client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
 });
