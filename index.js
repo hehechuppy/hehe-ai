@@ -1,5 +1,5 @@
-const { Client, GatewayIntentBits } = require('discord.js');
-const Anthropic = require('@anthropic-ai/sdk');
+const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const express = require('express');
 require('dotenv').config();
 
@@ -24,10 +24,8 @@ app.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
 
-// Initialize Claude
-const anthropic = new Anthropic({
-  apiKey: process.env.CLAUDE_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
 // Lưu conversation history cho mỗi user
 const conversationHistory = new Map();
@@ -37,25 +35,8 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 client.once('clientReady', () => {
   console.log(`✅ Bot logged in as ${client.user.tag}`);
-  console.log(`🚀 Using Claude API (Anthropic)`);
   client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
 });
-
-// Function để gọi Claude
-async function callClaude(messages) {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
-      messages: messages,
-    });
-
-    return response.content[0].text;
-  } catch (error) {
-    console.error('❌ Claude error:', error.message);
-    throw error;
-  }
-}
 
 client.on('messageCreate', async (message) => {
   // Bỏ qua bot messages và webhook messages
@@ -70,7 +51,7 @@ client.on('messageCreate', async (message) => {
     // Hiển thị "đang gõ"
     await message.channel.sendTyping();
     
-    // Chờ 500ms
+    // Chờ 500ms để tránh rate limit
     await wait(500);
 
     // Lấy user ID để track conversation
@@ -89,28 +70,30 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    // Lấy conversation history
+    // Thêm vào conversation history
     const history = conversationHistory.get(userId);
-
-    // Thêm tin nhắn mới vào history
     history.push({
       role: 'user',
-      content: userMessage,
+      parts: [{ text: userMessage }],
     });
 
-    // Giữ lại 20 tin nhắn gần nhất (để tránh quá dài)
-    if (history.length > 20) {
+    // Giữ lại 10 tin nhắn gần nhất (để tránh quá dài)
+    if (history.length > 10) {
       history.shift();
     }
 
-    // Gọi Claude
-    console.log(`🔄 Processing: "${userMessage}"`);
-    const response = await callClaude(history);
+    // Gọi Gemini AI
+    const chat = model.startChat({
+      history: history.slice(0, -1), // Loại bỏ tin nhắn vừa thêm để tránh duplicate
+    });
+
+    const result = await chat.sendMessage(userMessage);
+    const response = result.response.text();
 
     // Thêm response vào history
     history.push({
-      role: 'assistant',
-      content: response,
+      role: 'model',
+      parts: [{ text: response }],
     });
 
     // Tách response nếu quá dài (Discord limit 2000 ký tự)
@@ -123,19 +106,19 @@ client.on('messageCreate', async (message) => {
     } else {
       await message.reply(response);
     }
-
-    console.log(`✅ Reply sent to ${message.author.username}`);
   } catch (error) {
-    console.error('❌ Error:', error.message);
+    console.error('❌ Lỗi:', error.message);
 
-    if (error.message.includes('401') || error.message.includes('API key')) {
-      await message.reply('❌ Lỗi: API key không hợp lệ. Kiểm tra `.env` file.');
-    } else if (error.message.includes('quota') || error.message.includes('rate_limit')) {
-      await message.reply('⏳ Quota hết hoặc rate limit! Thử lại sau.');
-    } else if (error.message.includes('timeout')) {
-      await message.reply('⏳ Claude đang xử lý quá lâu. Thử lại sau.');
+    if (error.message.includes('GEMINI_API_KEY')) {
+      await message.reply('❌ Lỗi: API key không được set. Kiểm tra `.env` file.');
+    } else if (error.message.includes('quota')) {
+      await message.reply('❌ Quota Gemini API đã hết. Vui lòng thử lại sau.');
+    } else if (error.message.includes('no longer available')) {
+      await message.reply('❌ Model không khả dụng. Admin đang fix...');
+    } else if (error.message.includes('429')) {
+      await message.reply('⏳ Rate limit! Vui lòng chờ một chút rồi thử lại.');
     } else {
-      await message.reply('❌ Có lỗi xảy ra. Thử lại sau.');
+      await message.reply('❌ Có lỗi xảy ra. Vui lòng thử lại sau.');
     }
   }
 });
@@ -146,7 +129,7 @@ client.on('messageCreate', async (message) => {
     const helpEmbed = {
       color: 0x0099ff,
       title: '🤖 Trợ giúp Bot AI',
-      description: 'Cách sử dụng bot chatbot AI với Claude',
+      description: 'Cách sử dụng bot chatbot AI',
       fields: [
         {
           name: '💬 Chat với bot',
@@ -154,25 +137,26 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: 'Claude 3.5 Sonnet (Anthropic)',
-        },
-        {
-          name: '⚡ Tính năng',
-          value: '✅ Free tier (100K tokens/tháng)\n✅ Chất lượng cao\n✅ Ổn định\n✅ Nhớ conversation',
+          value: 'Gemini 3.6 Flash + Discord.js',
         },
       ],
-      footer: { text: 'Claude: Powerful & Reliable!' },
+      footer: { text: 'Bot sẽ nhớ conversation của bạn trong phiên đó' },
     };
 
     await message.reply({ embeds: [helpEmbed] });
   }
 });
 
-// Xóa conversation history định kỳ
+// Xóa conversation history khi user không hoạt động lâu (optional)
 setInterval(() => {
-  if (conversationHistory.size > 50) {
-    const firstKey = conversationHistory.keys().next().value;
-    conversationHistory.delete(firstKey);
+  const now = Date.now();
+  const MAX_HISTORY_AGE = 24 * 60 * 60 * 1000; // 24 giờ
+
+  for (const [userId, history] of conversationHistory.entries()) {
+    // Đơn giản: xóa nếu có quá 50 user
+    if (conversationHistory.size > 50) {
+      conversationHistory.delete(userId);
+    }
   }
 }, 60 * 60 * 1000); // Check mỗi giờ
 
