@@ -1,26 +1,20 @@
 {
-  "name": "discord-gemini-bot",
+  "name": "discord-groq-bot",
   "version": "1.0.0",
-  "description": "Discord bot with Gemini AI chatbot",
+  "description": "Discord bot with Groq AI",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
-  "keywords": [
-    "discord",
-    "bot",
-    "gemini",
-    "ai",
-    "chatbot"
-  ],
+  "keywords": ["discord", "bot", "groq", "ai", "chatbot"],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "discord.js": "^14.14.0",
-    "@google/generative-ai": "^0.7.0",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2"
+    "groq-sdk": "^0.5.0",
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
