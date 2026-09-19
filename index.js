@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits } = require('discord.js');
-const { Groq } = require('groq-sdk');
+const Anthropic = require('@anthropic-ai/sdk');
 const express = require('express');
 require('dotenv').config();
 
@@ -24,9 +24,9 @@ app.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
 
-// Initialize Groq
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+// Initialize Claude
+const anthropic = new Anthropic({
+  apiKey: process.env.CLAUDE_API_KEY,
 });
 
 // Lưu conversation history cho mỗi user
@@ -35,78 +35,27 @@ const conversationHistory = new Map();
 // Helper function để delay
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Auto-detect available model từ Groq
-let AVAILABLE_MODEL = null;
+client.once('clientReady', () => {
+  console.log(`✅ Bot logged in as ${client.user.tag}`);
+  console.log(`🚀 Using Claude API (Anthropic)`);
+  client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
+});
 
-async function detectAvailableModel() {
+// Function để gọi Claude
+async function callClaude(messages) {
   try {
-    console.log('🔍 Detecting available Groq models...');
-    
-    // Groq không có API để list models, nên test các model phổ biến
-    const modelsToTry = [
-      'mixtral-8x7b-32768',
-      'llama3-8b-8192',
-      'llama3-70b-8192',
-      'gemma2-9b-it',
-      'qwen2-72b-4k',
-      'qwq-32b-preview',
-    ];
-
-    for (const model of modelsToTry) {
-      try {
-        // Test model với một request đơn giản
-        const response = await groq.chat.completions.create({
-          messages: [{ role: 'user', content: 'hi' }],
-          model: model,
-          max_tokens: 10,
-        });
-        
-        AVAILABLE_MODEL = model;
-        console.log(`✅ Found available model: ${model}`);
-        return model;
-      } catch (error) {
-        console.log(`❌ Model ${model} not available`);
-        continue;
-      }
-    }
-
-    throw new Error('No available models found!');
-  } catch (error) {
-    console.error('❌ Error detecting models:', error.message);
-    // Fallback to a default
-    AVAILABLE_MODEL = 'mixtral-8x7b-32768';
-    return AVAILABLE_MODEL;
-  }
-}
-
-// Gọi Groq
-async function callGroq(messages) {
-  try {
-    const response = await groq.chat.completions.create({
-      messages: messages,
-      model: AVAILABLE_MODEL,
-      temperature: 0.7,
+    const response = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
       max_tokens: 1024,
+      messages: messages,
     });
 
-    return response.choices[0].message.content;
+    return response.content[0].text;
   } catch (error) {
-    console.error('❌ Groq error:', error.message);
+    console.error('❌ Claude error:', error.message);
     throw error;
   }
 }
-
-client.once('clientReady', async () => {
-  console.log(`✅ Bot logged in as ${client.user.tag}`);
-  
-  // Detect model khi bot ready
-  if (!AVAILABLE_MODEL) {
-    await detectAvailableModel();
-  }
-  
-  console.log(`🚀 Using Groq AI - Model: ${AVAILABLE_MODEL}`);
-  client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
-});
 
 client.on('messageCreate', async (message) => {
   // Bỏ qua bot messages và webhook messages
@@ -154,9 +103,9 @@ client.on('messageCreate', async (message) => {
       history.shift();
     }
 
-    // Gọi Groq
+    // Gọi Claude
     console.log(`🔄 Processing: "${userMessage}"`);
-    const response = await callGroq(history);
+    const response = await callClaude(history);
 
     // Thêm response vào history
     history.push({
@@ -181,12 +130,10 @@ client.on('messageCreate', async (message) => {
 
     if (error.message.includes('401') || error.message.includes('API key')) {
       await message.reply('❌ Lỗi: API key không hợp lệ. Kiểm tra `.env` file.');
-    } else if (error.message.includes('429')) {
-      await message.reply('⏳ Rate limit! Groq đang xử lý quá nhiều. Thử lại sau.');
+    } else if (error.message.includes('quota') || error.message.includes('rate_limit')) {
+      await message.reply('⏳ Quota hết hoặc rate limit! Thử lại sau.');
     } else if (error.message.includes('timeout')) {
-      await message.reply('⏳ Groq đang xử lý quá lâu. Thử lại sau.');
-    } else if (error.message.includes('No available models')) {
-      await message.reply('❌ Groq không có model khả dụng. Thử lại sau.');
+      await message.reply('⏳ Claude đang xử lý quá lâu. Thử lại sau.');
     } else {
       await message.reply('❌ Có lỗi xảy ra. Thử lại sau.');
     }
@@ -199,7 +146,7 @@ client.on('messageCreate', async (message) => {
     const helpEmbed = {
       color: 0x0099ff,
       title: '🤖 Trợ giúp Bot AI',
-      description: 'Cách sử dụng bot chatbot AI với Groq',
+      description: 'Cách sử dụng bot chatbot AI với Claude',
       fields: [
         {
           name: '💬 Chat với bot',
@@ -207,14 +154,14 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: `Groq + ${AVAILABLE_MODEL || 'Auto-detect'}`,
+          value: 'Claude 3.5 Sonnet (Anthropic)',
         },
         {
           name: '⚡ Tính năng',
-          value: '✅ Miễn phí\n✅ Unlimited\n✅ Siêu nhanh\n✅ Nhớ conversation\n✅ Auto-detect models',
+          value: '✅ Free tier (100K tokens/tháng)\n✅ Chất lượng cao\n✅ Ổn định\n✅ Nhớ conversation',
         },
       ],
-      footer: { text: 'Groq: Free, Fast, và Forever!' },
+      footer: { text: 'Claude: Powerful & Reliable!' },
     };
 
     await message.reply({ embeds: [helpEmbed] });
