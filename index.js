@@ -52,7 +52,7 @@ client.on('messageCreate', async (message) => {
     await message.channel.sendTyping();
     
     // Chờ 500ms để tránh rate limit
-    await wait(500);
+    await wait(2000);
 
     // Lấy user ID để track conversation
     const userId = message.author.id;
