@@ -112,7 +112,7 @@ client.on('messageCreate', async (message) => {
     if (error.message.includes('GEMINI_API_KEY')) {
       await message.reply('❌ Lỗi: API key không được set. Kiểm tra `.env` file.');
     } else if (error.message.includes('quota')) {
-      await message.reply('❌ Quota Gemini API đã hết. Vui lòng thử lại sau.');
+      await message.reply('❌ Quota Gemini API đã hết. nạp tiến đê.');
     } else if (error.message.includes('no longer available')) {
       await message.reply('❌ Model không khả dụng. Admin đang fix...');
     } else if (error.message.includes('429')) {
