@@ -29,53 +29,82 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
-// Danh sách models Groq (sắp xếp theo độ mạnh)
-const GROQ_MODELS = [
-  'llama-3.3-70b-versatile',
-  'gemma-7b-it',
-  'mixtral-8x7b-32768',
-  'llama-3.1-70b-versatile',
-];
-
-let CURRENT_MODEL = GROQ_MODELS[0]; // Default model
-
-// Function để auto-retry với model khác nếu bị deprecate
-async function callGroqWithFallback(messages, modelIndex = 0) {
-  if (modelIndex >= GROQ_MODELS.length) {
-    throw new Error('❌ Không có model nào khả dụng!');
-  }
-
-  const model = GROQ_MODELS[modelIndex];
-
-  try {
-    const response = await groq.chat.completions.create({
-      messages: messages,
-      model: model,
-      temperature: 0.7,
-      max_tokens: 1024,
-    });
-
-    // Nếu thành công, set model hiện tại
-    CURRENT_MODEL = model;
-    return response.choices[0].message.content;
-  } catch (error) {
-    if (error.message.includes('decommissioned') || error.message.includes('404')) {
-      console.warn(`⚠️ Model ${model} bị deprecate, thử model khác...`);
-      return callGroqWithFallback(messages, modelIndex + 1);
-    }
-    throw error;
-  }
-}
-
 // Lưu conversation history cho mỗi user
 const conversationHistory = new Map();
 
 // Helper function để delay
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-client.once('clientReady', () => {
+// Auto-detect available model từ Groq
+let AVAILABLE_MODEL = null;
+
+async function detectAvailableModel() {
+  try {
+    console.log('🔍 Detecting available Groq models...');
+    
+    // Groq không có API để list models, nên test các model phổ biến
+    const modelsToTry = [
+      'mixtral-8x7b-32768',
+      'llama3-8b-8192',
+      'llama3-70b-8192',
+      'gemma2-9b-it',
+      'qwen2-72b-4k',
+      'qwq-32b-preview',
+    ];
+
+    for (const model of modelsToTry) {
+      try {
+        // Test model với một request đơn giản
+        const response = await groq.chat.completions.create({
+          messages: [{ role: 'user', content: 'hi' }],
+          model: model,
+          max_tokens: 10,
+        });
+        
+        AVAILABLE_MODEL = model;
+        console.log(`✅ Found available model: ${model}`);
+        return model;
+      } catch (error) {
+        console.log(`❌ Model ${model} not available`);
+        continue;
+      }
+    }
+
+    throw new Error('No available models found!');
+  } catch (error) {
+    console.error('❌ Error detecting models:', error.message);
+    // Fallback to a default
+    AVAILABLE_MODEL = 'mixtral-8x7b-32768';
+    return AVAILABLE_MODEL;
+  }
+}
+
+// Gọi Groq
+async function callGroq(messages) {
+  try {
+    const response = await groq.chat.completions.create({
+      messages: messages,
+      model: AVAILABLE_MODEL,
+      temperature: 0.7,
+      max_tokens: 1024,
+    });
+
+    return response.choices[0].message.content;
+  } catch (error) {
+    console.error('❌ Groq error:', error.message);
+    throw error;
+  }
+}
+
+client.once('clientReady', async () => {
   console.log(`✅ Bot logged in as ${client.user.tag}`);
-  console.log(`🚀 Using Groq AI - Model: ${CURRENT_MODEL}`);
+  
+  // Detect model khi bot ready
+  if (!AVAILABLE_MODEL) {
+    await detectAvailableModel();
+  }
+  
+  console.log(`🚀 Using Groq AI - Model: ${AVAILABLE_MODEL}`);
   client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
 });
 
@@ -125,9 +154,9 @@ client.on('messageCreate', async (message) => {
       history.shift();
     }
 
-    // Gọi Groq với auto-fallback
+    // Gọi Groq
     console.log(`🔄 Processing: "${userMessage}"`);
-    const response = await callGroqWithFallback(history);
+    const response = await callGroq(history);
 
     // Thêm response vào history
     history.push({
@@ -156,8 +185,8 @@ client.on('messageCreate', async (message) => {
       await message.reply('⏳ Rate limit! Groq đang xử lý quá nhiều. Thử lại sau.');
     } else if (error.message.includes('timeout')) {
       await message.reply('⏳ Groq đang xử lý quá lâu. Thử lại sau.');
-    } else if (error.message.includes('không có model nào')) {
-      await message.reply('❌ Tất cả models đều không khả dụng. Admin đang fix...');
+    } else if (error.message.includes('No available models')) {
+      await message.reply('❌ Groq không có model khả dụng. Thử lại sau.');
     } else {
       await message.reply('❌ Có lỗi xảy ra. Thử lại sau.');
     }
@@ -178,11 +207,11 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: `Groq + ${CURRENT_MODEL}`,
+          value: `Groq + ${AVAILABLE_MODEL || 'Auto-detect'}`,
         },
         {
           name: '⚡ Tính năng',
-          value: '✅ Miễn phí\n✅ Unlimited\n✅ Siêu nhanh\n✅ Nhớ conversation\n✅ Auto-fallback models',
+          value: '✅ Miễn phí\n✅ Unlimited\n✅ Siêu nhanh\n✅ Nhớ conversation\n✅ Auto-detect models',
         },
       ],
       footer: { text: 'Groq: Free, Fast, và Forever!' },
