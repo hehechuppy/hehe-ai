@@ -1,20 +1,26 @@
 {
-  "name": "discord-claude-bot",
+  "name": "discord-gemini-bot",
   "version": "1.0.0",
-  "description": "Discord bot with Claude AI",
+  "description": "Discord bot with Gemini AI chatbot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
-  "keywords": ["discord", "bot", "claude", "ai", "chatbot"],
+  "keywords": [
+    "discord",
+    "bot",
+    "gemini",
+    "ai",
+    "chatbot"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "discord.js": "^14.14.0",
-    "@anthropic-ai/sdk": "^0.20.0",
-    "express": "^4.18.2",
-    "dotenv": "^16.3.1"
+    "@google/generative-ai": "^0.7.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
