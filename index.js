@@ -46,7 +46,7 @@ async function callGroq(messages) {
   try {
     const response = await groq.chat.completions.create({
       messages: messages,
-      model: 'mixtral-8x7b-32768', // Hoặc: llama2-70b-4096
+      model: 'llama-3.1-70b-versatile', // Hoặc: llama2-70b-4096
       temperature: 0.7,
       max_tokens: 1024,
     });
