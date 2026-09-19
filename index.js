@@ -1,83 +1,139 @@
+const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
-const { Client, Events, GatewayIntentBits } = require('discord.js');
-const Groq = require('groq-sdk');
-const express = require('express');
-
-// Web Server Keep-Alive trên Render
-const app = express();
-const PORT = process.env.PORT || 10000;
-app.get('/', (req, res) => res.send('Bot Groq AI đang hoạt động!'));
-app.listen(PORT, () => console.log(`✅ Server HTTP listening on port ${PORT}`));
-
-// Khởi tạo Groq SDK
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
     GatewayIntentBits.MessageContent,
   ],
 });
 
-client.once(Events.ClientReady, (readyClient) => {
-  console.log(`🤖 Bot Groq AI đã đăng nhập: ${readyClient.user.tag}`);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+
+// Lưu conversation history cho mỗi user
+const conversationHistory = new Map();
+
+client.once('ready', () => {
+  console.log(`✅ Bot logged in as ${client.user.tag}`);
+  client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
 });
 
-client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot) return;
+client.on('messageCreate', async (message) => {
+  // Bỏ qua bot messages và webhook messages
+  if (message.author.bot || message.webhookId) return;
 
-  // 1. Kiểm tra nếu REPLY tin nhắn của bot
-  let isReplyToBot = false;
-  if (message.reference) {
-    try {
-      const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-      if (referencedMessage.author.id === client.user.id) {
-        isReplyToBot = true;
-      }
-    } catch (err) {
-      console.error('Không lấy được tin nhắn reply:', err);
-    }
-  }
-
-  // 2. Kiểm tra MENTION (@) bot hoặc lệnh !gpt / !gemini
-  const isMentioned = message.mentions.has(client.user.id);
-  const startsWithPrefix = message.content.startsWith('!gpt') || message.content.startsWith('!gemini');
-
-  if (!isReplyToBot && !isMentioned && !startsWithPrefix) return;
-
-  // Làm sạch prompt
-  let prompt = message.content
-    .replace('!gpt', '')
-    .replace('!gemini', '')
-    .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
-    .trim();
-
-  if (!prompt) {
-    return message.reply('❓ Bạn chưa nhập nội dung câu hỏi!');
+  // Bỏ qua nếu không phải tin nhắn tới bot
+  if (!message.mentions.has(client.user) && message.channel.isDMBased() === false) {
+    return;
   }
 
   try {
+    // Hiển thị "đang gõ"
     await message.channel.sendTyping();
 
-    // Dùng Model ID chuẩn của Groq: llama3-8b-8192
-    const response = await groq.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      model: 'llama3-8b-8192',
+    // Lấy user ID để track conversation
+    const userId = message.author.id;
+
+    // Nếu không có history, tạo mới
+    if (!conversationHistory.has(userId)) {
+      conversationHistory.set(userId, []);
+    }
+
+    // Lấy tin nhắn và xóa mention
+    let userMessage = message.content.replace(/^<@!?\d+>\s*/, '').trim();
+
+    if (!userMessage) {
+      await message.reply('Bạn chưa nói gì! 😊');
+      return;
+    }
+
+    // Thêm vào conversation history
+    const history = conversationHistory.get(userId);
+    history.push({
+      role: 'user',
+      parts: [{ text: userMessage }],
     });
 
-    const replyText = response.choices[0]?.message?.content || 'Không có phản hồi.';
+    // Giữ lại 10 tin nhắn gần nhất (để tránh quá dài)
+    if (history.length > 10) {
+      history.shift();
+    }
 
-    if (replyText.length > 2000) {
-      const chunks = replyText.match(/[\s\S]{1,1900}/g) || [];
-      for (const chunk of chunks) await message.reply(chunk);
+    // Gọi Gemini AI
+    const chat = model.startChat({
+      history: history.slice(0, -1), // Loại bỏ tin nhắn vừa thêm để tránh duplicate
+    });
+
+    const result = await chat.sendMessage(userMessage);
+    const response = result.response.text();
+
+    // Thêm response vào history
+    history.push({
+      role: 'model',
+      parts: [{ text: response }],
+    });
+
+    // Tách response nếu quá dài (Discord limit 2000 ký tự)
+    if (response.length > 2000) {
+      const chunks = response.match(/[\s\S]{1,1900}/g) || [];
+      for (const chunk of chunks) {
+        await message.reply(chunk);
+      }
     } else {
-      await message.reply(replyText);
+      await message.reply(response);
     }
   } catch (error) {
-    console.error('Groq Error:', error);
-    await message.reply('❌ Có lỗi xảy ra khi gọi AI API.');
+    console.error('❌ Lỗi:', error.message);
+
+    if (error.message.includes('GEMINI_API_KEY')) {
+      await message.reply('❌ Lỗi: API key không được set. Kiểm tra `.env` file.');
+    } else if (error.message.includes('quota')) {
+      await message.reply('❌ Quota Gemini API đã hết. Vui lòng thử lại sau.');
+    } else {
+      await message.reply('❌ Có lỗi xảy ra. Vui lòng thử lại sau.');
+    }
   }
 });
+
+// Command help
+client.on('messageCreate', async (message) => {
+  if (message.content === '/help' || message.content.includes('/help')) {
+    const helpEmbed = {
+      color: 0x0099ff,
+      title: '🤖 Trợ giúp Bot AI',
+      description: 'Cách sử dụng bot chatbot AI',
+      fields: [
+        {
+          name: '💬 Chat với bot',
+          value: 'Mention bot hoặc DM: `@Bot [tin nhắn]`',
+        },
+        {
+          name: '📌 Powered by',
+          value: 'Gemini AI + Discord.js',
+        },
+      ],
+      footer: { text: 'Bot sẽ nhớ conversation của bạn trong phiên đó' },
+    };
+
+    await message.reply({ embeds: [helpEmbed] });
+  }
+});
+
+// Xóa conversation history khi user không hoạt động lâu (optional)
+setInterval(() => {
+  const now = Date.now();
+  const MAX_HISTORY_AGE = 24 * 60 * 60 * 1000; // 24 giờ
+
+  for (const [userId, history] of conversationHistory.entries()) {
+    // Đơn giản: xóa nếu có quá 50 user
+    if (conversationHistory.size > 50) {
+      conversationHistory.delete(userId);
+    }
+  }
+}, 60 * 60 * 1000); // Check mỗi giờ
 
 client.login(process.env.DISCORD_TOKEN);
