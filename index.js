@@ -25,10 +25,13 @@ app.listen(PORT, () => {
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
 // Lưu conversation history cho mỗi user
 const conversationHistory = new Map();
+
+// Helper function để delay
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 client.once('clientReady', () => {
   console.log(`✅ Bot logged in as ${client.user.tag}`);
@@ -47,6 +50,9 @@ client.on('messageCreate', async (message) => {
   try {
     // Hiển thị "đang gõ"
     await message.channel.sendTyping();
+    
+    // Chờ 500ms để tránh rate limit
+    await wait(500);
 
     // Lấy user ID để track conversation
     const userId = message.author.id;
@@ -95,6 +101,7 @@ client.on('messageCreate', async (message) => {
       const chunks = response.match(/[\s\S]{1,1900}/g) || [];
       for (const chunk of chunks) {
         await message.reply(chunk);
+        await wait(300); // Chờ giữa các message
       }
     } else {
       await message.reply(response);
@@ -106,8 +113,10 @@ client.on('messageCreate', async (message) => {
       await message.reply('❌ Lỗi: API key không được set. Kiểm tra `.env` file.');
     } else if (error.message.includes('quota')) {
       await message.reply('❌ Quota Gemini API đã hết. Vui lòng thử lại sau.');
-    } else if (error.message.includes('not found')) {
-      await message.reply('❌ Lỗi: Model Gemini không hợp lệ. Kiểm tra API key.');
+    } else if (error.message.includes('no longer available')) {
+      await message.reply('❌ Model không khả dụng. Admin đang fix...');
+    } else if (error.message.includes('429')) {
+      await message.reply('⏳ Rate limit! Vui lòng chờ một chút rồi thử lại.');
     } else {
       await message.reply('❌ Có lỗi xảy ra. Vui lòng thử lại sau.');
     }
@@ -128,7 +137,7 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: 'Gemini 2.0 Flash + Discord.js',
+          value: 'Gemini 3.6 Flash + Discord.js',
         },
       ],
       footer: { text: 'Bot sẽ nhớ conversation của bạn trong phiên đó' },
