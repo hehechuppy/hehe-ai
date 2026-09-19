@@ -12,120 +12,39 @@ const client = new Client({
   ],
 });
 
-// Express server for Render health check
+// Express server cho Render Keep-Alive
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
   res.status(200).send('Bot is running ✅');
 });
 
-app.listen(PORT, () => {
-  console.log(`HTTP server listening on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ HTTP server listening on port ${PORT}`);
 });
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+// Khởi tạo Gemini AI
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// Sửa tên model thành tên chính thức: gemini-1.5-flash
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-// Lưu conversation history cho mỗi user
+// Lưu conversation history cho từng user
 const conversationHistory = new Map();
 
-// Helper function để delay
-const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// Helper delay
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-client.once('clientReady', () => {
+client.once('ready', () => {
   console.log(`✅ Bot logged in as ${client.user.tag}`);
   client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
 });
 
 client.on('messageCreate', async (message) => {
-  // Bỏ qua bot messages và webhook messages
   if (message.author.bot || message.webhookId) return;
 
-  // Bỏ qua nếu không phải tin nhắn tới bot
-  if (!message.mentions.has(client.user) && message.channel.isDMBased() === false) {
-    return;
-  }
-
-  try {
-    // Hiển thị "đang gõ"
-    await message.channel.sendTyping();
-    
-    // Chờ 500ms để tránh rate limit
-    await wait(2000);
-
-    // Lấy user ID để track conversation
-    const userId = message.author.id;
-
-    // Nếu không có history, tạo mới
-    if (!conversationHistory.has(userId)) {
-      conversationHistory.set(userId, []);
-    }
-
-    // Lấy tin nhắn và xóa mention
-    let userMessage = message.content.replace(/^<@!?\d+>\s*/, '').trim();
-
-    if (!userMessage) {
-      await message.reply('Bạn chưa nói gì! 😊');
-      return;
-    }
-
-    // Thêm vào conversation history
-    const history = conversationHistory.get(userId);
-    history.push({
-      role: 'user',
-      parts: [{ text: userMessage }],
-    });
-
-    // Giữ lại 10 tin nhắn gần nhất (để tránh quá dài)
-    if (history.length > 10) {
-      history.shift();
-    }
-
-    // Gọi Gemini AI
-    const chat = model.startChat({
-      history: history.slice(0, -1), // Loại bỏ tin nhắn vừa thêm để tránh duplicate
-    });
-
-    const result = await chat.sendMessage(userMessage);
-    const response = result.response.text();
-
-    // Thêm response vào history
-    history.push({
-      role: 'model',
-      parts: [{ text: response }],
-    });
-
-    // Tách response nếu quá dài (Discord limit 2000 ký tự)
-    if (response.length > 2000) {
-      const chunks = response.match(/[\s\S]{1,1900}/g) || [];
-      for (const chunk of chunks) {
-        await message.reply(chunk);
-        await wait(300); // Chờ giữa các message
-      }
-    } else {
-      await message.reply(response);
-    }
-  } catch (error) {
-    console.error('❌ Lỗi:', error.message);
-
-    if (error.message.includes('GEMINI_API_KEY')) {
-      await message.reply('❌ Lỗi: API key không được set. Kiểm tra `.env` file.');
-    } else if (error.message.includes('quota')) {
-      await message.reply('❌ Quota Gemini API đã hết. Vui lòng thử lại sau.');
-    } else if (error.message.includes('no longer available')) {
-      await message.reply('❌ Model không khả dụng. Admin đang fix...');
-    } else if (error.message.includes('429')) {
-      await message.reply('⏳ Rate limit! Vui lòng chờ một chút rồi thử lại.');
-    } else {
-      await message.reply('❌ Có lỗi xảy ra. Vui lòng thử lại sau.');
-    }
-  }
-});
-
-// Command help
-client.on('messageCreate', async (message) => {
-  if (message.content === '/help' || message.content.includes('/help')) {
+  // Lệnh /help
+  if (message.content.trim() === '/help') {
     const helpEmbed = {
       color: 0x0099ff,
       title: '🤖 Trợ giúp Bot AI',
@@ -137,27 +56,82 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: 'Gemini 3.6 Flash + Discord.js',
+          value: 'Gemini 1.5 Flash + Discord.js',
         },
       ],
       footer: { text: 'Bot sẽ nhớ conversation của bạn trong phiên đó' },
     };
 
-    await message.reply({ embeds: [helpEmbed] });
+    return message.reply({ embeds: [helpEmbed] });
+  }
+
+  // Lọc tin nhắn không đề cập bot hoặc không nằm trong DM
+  if (!message.mentions.has(client.user) && !message.channel.isDMBased()) {
+    return;
+  }
+
+  try {
+    await message.channel.sendTyping();
+    await wait(1000);
+
+    const userId = message.author.id;
+
+    if (!conversationHistory.has(userId)) {
+      conversationHistory.set(userId, []);
+    }
+
+    let userMessage = message.content.replace(/^<@!?\d+>\s*/, '').trim();
+
+    if (!userMessage) {
+      return message.reply('Bạn chưa nhập nội dung câu hỏi! 😊');
+    }
+
+    const history = conversationHistory.get(userId);
+
+    const chat = model.startChat({
+      history: history,
+    });
+
+    const result = await chat.sendMessage(userMessage);
+    const response = result.response.text();
+
+    // Cập nhật history sau khi phản hồi thành công
+    history.push({ role: 'user', parts: [{ text: userMessage }] });
+    history.push({ role: 'model', parts: [{ text: response }] });
+
+    // Giữ tối đa 10 lượt hội thoại gần nhất
+    if (history.length > 20) {
+      history.splice(0, 2);
+    }
+
+    // Tách tin nhắn nếu dài hơn 2000 ký tự (Giới hạn Discord)
+    if (response.length > 2000) {
+      const chunks = response.match(/[\s\S]{1,1900}/g) || [];
+      for (const chunk of chunks) {
+        await message.reply(chunk);
+        await wait(300);
+      }
+    } else {
+      await message.reply(response);
+    }
+  } catch (error) {
+    console.error('❌ Lỗi Gemini:', error);
+
+    if (error.message.includes('API_KEY_INVALID') || error.message.includes('API key not valid')) {
+      await message.reply('❌ Lỗi: API Key Gemini không hợp lệ. Vui lòng kiểm tra lại cấu hình trên Render.');
+    } else if (error.message.includes('quota')) {
+      await message.reply('❌ Hết hạn ngạch (Quota) Gemini API.');
+    } else {
+      await message.reply('❌ Có lỗi xảy ra khi xử lý phản hồi từ AI.');
+    }
   }
 });
 
-// Xóa conversation history khi user không hoạt động lâu (optional)
+// Dọn dẹp bộ nhớ định kỳ
 setInterval(() => {
-  const now = Date.now();
-  const MAX_HISTORY_AGE = 24 * 60 * 60 * 1000; // 24 giờ
-
-  for (const [userId, history] of conversationHistory.entries()) {
-    // Đơn giản: xóa nếu có quá 50 user
-    if (conversationHistory.size > 50) {
-      conversationHistory.delete(userId);
-    }
+  if (conversationHistory.size > 50) {
+    conversationHistory.clear();
   }
-}, 60 * 60 * 1000); // Check mỗi giờ
+}, 60 * 60 * 1000);
 
 client.login(process.env.DISCORD_TOKEN);
