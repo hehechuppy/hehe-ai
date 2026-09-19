@@ -25,7 +25,7 @@ app.listen(PORT, () => {
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 // Lưu conversation history cho mỗi user
 const conversationHistory = new Map();
@@ -128,7 +128,7 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: 'Gemini 1.5 Flash + Discord.js',
+          value: 'Gemini 2.0 Flash + Discord.js',
         },
       ],
       footer: { text: 'Bot sẽ nhớ conversation của bạn trong phiên đó' },
