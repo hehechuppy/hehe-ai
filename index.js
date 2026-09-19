@@ -29,6 +29,44 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
+// Danh sách models Groq (sắp xếp theo độ mạnh)
+const GROQ_MODELS = [
+  'llama-3.3-70b-versatile',
+  'gemma-7b-it',
+  'mixtral-8x7b-32768',
+  'llama-3.1-70b-versatile',
+];
+
+let CURRENT_MODEL = GROQ_MODELS[0]; // Default model
+
+// Function để auto-retry với model khác nếu bị deprecate
+async function callGroqWithFallback(messages, modelIndex = 0) {
+  if (modelIndex >= GROQ_MODELS.length) {
+    throw new Error('❌ Không có model nào khả dụng!');
+  }
+
+  const model = GROQ_MODELS[modelIndex];
+
+  try {
+    const response = await groq.chat.completions.create({
+      messages: messages,
+      model: model,
+      temperature: 0.7,
+      max_tokens: 1024,
+    });
+
+    // Nếu thành công, set model hiện tại
+    CURRENT_MODEL = model;
+    return response.choices[0].message.content;
+  } catch (error) {
+    if (error.message.includes('decommissioned') || error.message.includes('404')) {
+      console.warn(`⚠️ Model ${model} bị deprecate, thử model khác...`);
+      return callGroqWithFallback(messages, modelIndex + 1);
+    }
+    throw error;
+  }
+}
+
 // Lưu conversation history cho mỗi user
 const conversationHistory = new Map();
 
@@ -37,26 +75,9 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 client.once('clientReady', () => {
   console.log(`✅ Bot logged in as ${client.user.tag}`);
-  console.log(`🚀 Using Groq AI`);
+  console.log(`🚀 Using Groq AI - Model: ${CURRENT_MODEL}`);
   client.user.setActivity('tin nhắn | /help', { type: 'LISTENING' });
 });
-
-// Function để gọi Groq
-async function callGroq(messages) {
-  try {
-    const response = await groq.chat.completions.create({
-      messages: messages,
-      model: 'llama-3.3-70b-versatile', // Hoặc: llama2-70b-4096
-      temperature: 0.7,
-      max_tokens: 1024,
-    });
-
-    return response.choices[0].message.content;
-  } catch (error) {
-    console.error('❌ Groq error:', error.message);
-    throw error;
-  }
-}
 
 client.on('messageCreate', async (message) => {
   // Bỏ qua bot messages và webhook messages
@@ -104,9 +125,9 @@ client.on('messageCreate', async (message) => {
       history.shift();
     }
 
-    // Gọi Groq
+    // Gọi Groq với auto-fallback
     console.log(`🔄 Processing: "${userMessage}"`);
-    const response = await callGroq(history);
+    const response = await callGroqWithFallback(history);
 
     // Thêm response vào history
     history.push({
@@ -135,6 +156,8 @@ client.on('messageCreate', async (message) => {
       await message.reply('⏳ Rate limit! Groq đang xử lý quá nhiều. Thử lại sau.');
     } else if (error.message.includes('timeout')) {
       await message.reply('⏳ Groq đang xử lý quá lâu. Thử lại sau.');
+    } else if (error.message.includes('không có model nào')) {
+      await message.reply('❌ Tất cả models đều không khả dụng. Admin đang fix...');
     } else {
       await message.reply('❌ Có lỗi xảy ra. Thử lại sau.');
     }
@@ -155,11 +178,11 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: 'Groq + Mixtral 8x7B',
+          value: `Groq + ${CURRENT_MODEL}`,
         },
         {
           name: '⚡ Tính năng',
-          value: '✅ Miễn phí\n✅ Unlimited\n✅ Siêu nhanh\n✅ Nhớ conversation',
+          value: '✅ Miễn phí\n✅ Unlimited\n✅ Siêu nhanh\n✅ Nhớ conversation\n✅ Auto-fallback models',
         },
       ],
       footer: { text: 'Groq: Free, Fast, và Forever!' },
