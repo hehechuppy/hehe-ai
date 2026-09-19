@@ -106,6 +106,8 @@ client.on('messageCreate', async (message) => {
       await message.reply('❌ Lỗi: API key không được set. Kiểm tra `.env` file.');
     } else if (error.message.includes('quota')) {
       await message.reply('❌ Quota Gemini API đã hết. Vui lòng thử lại sau.');
+    } else if (error.message.includes('not found')) {
+      await message.reply('❌ Lỗi: Model Gemini không hợp lệ. Kiểm tra API key.');
     } else {
       await message.reply('❌ Có lỗi xảy ra. Vui lòng thử lại sau.');
     }
@@ -126,7 +128,7 @@ client.on('messageCreate', async (message) => {
         },
         {
           name: '📌 Powered by',
-          value: 'Gemini AI + Discord.js',
+          value: 'Gemini 1.5 Flash + Discord.js',
         },
       ],
       footer: { text: 'Bot sẽ nhớ conversation của bạn trong phiên đó' },
